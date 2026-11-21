@@ -73,10 +73,10 @@ export default function SimulatorScreen() {
   const finished = loaded && cursor >= total;
 
   const opRows: [string, OpsKey][] = [
-    ['Insertion', 'insertion'],
+    ['Enrollment (setup)', 'enroll'],
     [mode === 'optimized' ? 'Indexed search' : 'Linear search', 'search'],
     ['Existence check', 'existence'],
-    ['Record (append)', 'record'],
+    ['Insertion (attendance record)', 'insertion'],
     ['Summation', 'summation'],
     ['Merge sort', 'sort'],
   ];

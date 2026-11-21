@@ -17,7 +17,7 @@ interface Experiment {
   run: (state: State) => unknown;
 }
 
-/* ---------- Ways to build the system in a given state ---------- */
+/* ---------- Ways to build the system in a given state (all SETUP, outside the timers) ---------- */
 const enrolled = (data: Dataset, mode: Mode): AttendanceSystem => {
   const s = new AttendanceSystem({ mode });
   for (const st of data.students) s.enroll(st);
@@ -47,13 +47,14 @@ const wrap =
 /* ---------- Experiments ---------- */
 const EXPERIMENTS: Experiment[] = [
   {
-    name: { optimized: 'Insertion (sorted index)' },
+    name: { optimized: 'Insertion (attendance record)' },
     modes: ['optimized'],
     categories: ['insertion'],
     fresh: true,
-    makeState: (data, mode) => ({ system: new AttendanceSystem({ mode }), data }),
+    makeState: wrap(enrolled), // students are already enrolled (setup); only the insertions are timed
     run: ({ system, data }) => {
-      for (const s of data.students) system.enroll(s);
+      // one attendance record per student for the day
+      for (let i = 0; i < data.n; i++) system.insertAttendance(i, data.students[i].minute);
     },
   },
   {
@@ -94,11 +95,11 @@ const EXPERIMENTS: Experiment[] = [
   },
   {
     name: {
-      optimized: 'Full scan session (search+existence+record)',
+      optimized: 'Full scan session (search+existence+insertion)',
       baseline: 'Full scan session (baseline)',
     },
     modes: ['optimized', 'baseline'],
-    categories: ['search', 'existence', 'record'],
+    categories: ['search', 'existence', 'insertion'],
     fresh: true,
     makeState: wrap(enrolled),
     run: ({ system, data }) => {
@@ -108,7 +109,7 @@ const EXPERIMENTS: Experiment[] = [
   {
     name: { optimized: 'Full scan session + SHA-256 hashing' },
     modes: ['optimized'],
-    categories: ['search', 'existence', 'record'],
+    categories: ['search', 'existence', 'insertion'],
     fresh: true,
     makeState: wrap(enrolled),
     run: ({ system, data }) => {

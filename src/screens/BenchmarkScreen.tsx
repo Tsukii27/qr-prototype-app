@@ -3,6 +3,8 @@ import React, { useMemo, useState } from 'react';
 import { Platform, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Device from 'expo-device';
+import { File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { colors } from '../theme';
 import { Chip } from '../ui';
 import { CheckLine, ResultRow, runBenchmark, toCsv } from '../engine/experiments';
@@ -53,8 +55,37 @@ export default function BenchmarkScreen() {
     }
   };
 
-  const shareCsv = () =>
-    Share.share({ message: toCsv(rows, { device: env.device, engine: env.engine, memorySource }) });
+  // Writes a real .csv file and opens the share sheet with it (falls back to plain text)
+  const shareCsv = async () => {
+    const csv = toCsv(rows, { device: env.device, engine: env.engine, memorySource });
+
+    let file: File | null = null;
+    try {
+      const safeDevice = env.device.replace(/[^a-zA-Z0-9]+/g, '-');
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      file = new File(Paths.cache, `benchmark-${safeDevice}-${stamp}.csv`);
+      if (file.exists) file.delete();
+      file.create();
+      file.write(csv);
+    } catch {
+      file = null; // could not create the file
+    }
+
+    if (file && (await Sharing.isAvailableAsync())) {
+      try {
+        await Sharing.shareAsync(file.uri, {
+          mimeType: 'text/csv',
+          dialogTitle: 'Share benchmark results (CSV)',
+          UTI: 'public.comma-separated-values-text',
+        });
+      } catch {
+        // the share sheet was dismissed or failed, nothing else to do
+      }
+      return;
+    }
+
+    await Share.share({ message: csv }); // fallback: plain text
+  };
 
   const groups = useMemo(() => {
     const map = new Map<string, ResultRow[]>();
@@ -73,6 +104,7 @@ export default function BenchmarkScreen() {
         <Text style={styles.envText}>Device: {env.device}</Text>
         <Text style={styles.envText}>OS: {env.os} · RAM: {env.ram}</Text>
         <Text style={styles.envText}>Engine: {env.engine}</Text>
+        <Text style={styles.envText}>Build: Insertion = attendance record (v2)</Text>
         {__DEV__ && (
           <Text style={styles.warn}>
             Development mode is ON, so timings are slower and noisier. For final results start Metro
@@ -166,7 +198,7 @@ export default function BenchmarkScreen() {
           </Text>
           <TouchableOpacity style={styles.shareBtn} onPress={shareCsv} activeOpacity={0.85}>
             <Ionicons name="share-outline" size={18} color={colors.purple} />
-            <Text style={styles.shareText}>Share results as CSV</Text>
+            <Text style={styles.shareText}>Share results as CSV file</Text>
           </TouchableOpacity>
         </>
       )}

@@ -22,10 +22,10 @@ export interface LogRecord {
   status: Status;
 }
 export interface Ops {
-  insertion: number;
+  enroll: number; // setup only: building the sorted index when students are added (never measured)
+  insertion: number; // inserting the day's attendance record
   search: number;
   existence: number;
-  record: number;
   summation: number;
   sort: number;
 }
@@ -52,7 +52,7 @@ export class AttendanceSystem {
   index: IndexEntry[] = []; // kept sorted by token hash
   log: LogRecord[] = []; // attendance records in scan order
   scanned = new Set<number>(); // student ids already scanned today
-  ops: Ops = { insertion: 0, search: 0, existence: 0, record: 0, summation: 0, sort: 0 };
+  ops: Ops = { enroll: 0, insertion: 0, search: 0, existence: 0, summation: 0, sort: 0 };
 
   constructor(options: { mode?: Mode; cutoffMinute?: number } = {}) {
     this.mode = options.mode ?? 'optimized';
@@ -65,7 +65,10 @@ export class AttendanceSystem {
     });
   }
 
-  /* 1. Insertion: enroll a student (sorted insert into the token index) */
+  /*
+    Enrollment (SETUP ONLY, not one of the five algorithms and never measured):
+    the teacher adds a student once, and the token hash goes into the sorted index.
+  */
   enroll(student: StudentInput): number {
     const id = this.students.length;
     this.students.push({ id, ...student });
@@ -75,18 +78,18 @@ export class AttendanceSystem {
     const list = this.index;
     let i = list.length - 1;
     while (i >= 0) {
-      this.ops.insertion++; // comparison
+      this.ops.enroll++; // comparison
       if (list[i].hash <= entry.hash) break;
       list[i + 1] = list[i]; // shift right
-      this.ops.insertion++; // write
+      this.ops.enroll++; // write
       i--;
     }
     list[i + 1] = entry;
-    this.ops.insertion++; // final write
+    this.ops.enroll++; // final write
     return id;
   }
 
-  /* 2. Indexed Search: find a student by token hash */
+  /* Indexed Search: find a student by token hash */
   findByKey(key: string): StudentRow | null {
     if (this.mode === 'baseline') {
       for (let i = 0; i < this.students.length; i++) {
@@ -110,7 +113,7 @@ export class AttendanceSystem {
     return null;
   }
 
-  /* 3. Existence Check: was the student already scanned today? */
+  /* Existence Check: was the student already scanned today? */
   hasScanned(studentId: number): boolean {
     if (this.mode === 'baseline') {
       for (let i = 0; i < this.log.length; i++) {
@@ -123,24 +126,25 @@ export class AttendanceSystem {
     return this.scanned.has(studentId);
   }
 
-  // Saves the attendance record (not one of the five algorithms, counted separately)
-  recordAttendance(studentId: number, minute: number): Status {
+  /* Insertion: insert the student's attendance record for the day */
+  insertAttendance(studentId: number, minute: number): Status {
     const status: Status = minute > this.cutoff ? 'Late' : 'Present';
-    this.ops.record += 2; // one comparison + one append
+    this.ops.insertion++; // comparison (Present or Late)
     this.log.push({ studentId, minute, status });
+    this.ops.insertion++; // append the record to the log
     if (this.mode === 'optimized') {
-      this.scanned.add(studentId);
-      this.ops.record++;
+      this.scanned.add(studentId); // register in the "scanned today" set
+      this.ops.insertion++;
     }
     return status;
   }
 
-  /* Full scan pipeline: search -> existence check -> record */
+  /* Full scan pipeline: search -> existence check -> insertion */
   scanByKey(key: string, minute: number): ScanResult {
     const student = this.findByKey(key);
     if (!student) return { ok: false, reason: 'invalid' };
     if (this.hasScanned(student.id)) return { ok: false, reason: 'duplicate', student };
-    const status = this.recordAttendance(student.id, minute);
+    const status = this.insertAttendance(student.id, minute);
     return { ok: true, student, status };
   }
 
@@ -149,7 +153,7 @@ export class AttendanceSystem {
     return this.scanByKey(sha256Hex(token), minute);
   }
 
-  /* 4. Summation: dashboard totals */
+  /* Summation: dashboard totals (unchanged from the original version) */
   summarize() {
     let present = 0;
     let late = 0;
@@ -164,7 +168,7 @@ export class AttendanceSystem {
     return { present, late, absent: this.students.length - this.log.length, minutes };
   }
 
-  /* 5. Merge Sort: attendance list ordered by scan time */
+  /* Merge Sort: attendance records ordered by scan time */
   sortedAttendance(): LogRecord[] {
     const ops = this.ops;
     const sort = (arr: LogRecord[]): LogRecord[] => {
